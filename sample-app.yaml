@@ -1,0 +1,42 @@
+# event-display app deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: event-display
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &labels
+      app: event-display
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      containers:
+        - name: helloworld-go
+          # Source code: https://github.com/knative/eventing/tree/main/cmd/event_display
+          image: quay.io/jthottan/pythonwebserver:helloworld-python
+          envFrom:
+          - configMapRef:
+            name: ceph-notification-bucket
+          - secretRef:
+            name: ceph-notification-bucket
+          env:
+          - name: MILVUS_ENDPOINT
+            value: "http://my-release-milvus.default.svc:19530"
+          - name: COLLECTION_NAME
+            value: "demo_collection"
+---
+# Service that exposes event-display app.
+# This will be the subscriber for the Trigger
+kind: Service
+apiVersion: v1
+metadata:
+  name: event-display
+spec:
+  selector:
+    app: event-display
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
