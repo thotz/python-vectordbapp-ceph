@@ -7,6 +7,7 @@ from pymilvus import MilvusClient, DataType, Collection
 
 import boto3
 import os
+import re
 
 from dotenv import load_dotenv
 
@@ -27,14 +28,17 @@ s3 = boto3.client(
 # Store bucket name
 bucket_name = os.getenv("BUCKET_NAME")
 
-collection_name = os.getenv("COLLECTION_NAME")
+object_type = os.getenv("OBJECT_TYPE")
+
 
 i = 0
 
 app = Flask(__name__)
 
 @app.route('/', methods=['POST'])
-def hello_world():
+def pythonvectordbappceph():
+
+    collection_name = re.sub('-', '_', bucket_name)
     app.logger.debug(request.data)
     event_data = json.loads(request.data)
     object_key = event_data['Records'][0]['s3']['object']['key']
@@ -42,19 +46,22 @@ def hello_world():
     if not client.has_collection(collection_name=collection_name):
         client.create_collection(
             collection_name=collection_name,
-            dimension=768,  # The vectors we will use in this demo has 768 dimensions
+            dimension=os.getenv("VECTOR_DIMENSION"),
             )
-    object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
 
-    object_content = object_data["Body"].read().decode("utf-8")
-    app.logger.debug(object_content)
-    # Load the collection into memory
+    match object_type:
+        case "TEXT":
+            object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
+            object_content = object_data["Body"].read().decode("utf-8")
+        case _:
+            app.logger.error("Unknown object format")
     client.load_collection(collection_name=collection_name)
     objectlist = []
 
     objectlist.append(object_content)
 
-    embedding_fn = milvus_model.DefaultEmbeddingFunction()
+    # embedding_fn = milvus_model.DefaultEmbeddingFunction()
+    embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu')
 
     vectors = embedding_fn.encode_documents(objectlist)
 
@@ -70,4 +77,3 @@ def hello_world():
 
 if __name__ == '__main__':
     app.run(debug=True, host='0.0.0.0', port=8080)
-

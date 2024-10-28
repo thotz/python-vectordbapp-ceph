@@ -2,41 +2,49 @@
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: event-display
+  name: python-ceph-vectordb
 spec:
   replicas: 1
   selector:
     matchLabels: &labels
-      app: event-display
+      app: python-ceph-vectordb
   template:
     metadata:
       labels: *labels
     spec:
       containers:
-        - name: helloworld-go
+        - name: python-ceph-vectordb
           # Source code: https://github.com/knative/eventing/tree/main/cmd/event_display
           image: quay.io/jthottan/pythonwebserver:helloworld-python
           envFrom:
           - configMapRef:
-            name: ceph-notification-bucket
+              name: ceph-notification-bucket
           - secretRef:
-            name: ceph-notification-bucket
-          env:
-          - name: MILVUS_ENDPOINT
-            value: "http://my-release-milvus.default.svc:19530"
-          - name: COLLECTION_NAME
-            value: "demo_collection"
+              name: ceph-notification-bucket
+          - configMapRef:
+              name: python-ceph-vectordb
+
 ---
-# Service that exposes event-display app.
+# Service that exposes python-vector-db-app app.
 # This will be the subscriber for the Trigger
 kind: Service
 apiVersion: v1
 metadata:
-  name: event-display
+  name: python-ceph-vectordb
 spec:
   selector:
-    app: event-display
+    app: python-ceph-vectordb
   ports:
     - protocol: TCP
       port: 80
       targetPort: 8080
+---
+#If it is a operator most lively this configmap will be part of CRD values
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: python-ceph-vectordb
+data:
+  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
+  OBJECT_TYPE     : "TEXT"
+  VECTOR_DIMENSION: "384"

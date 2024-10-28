@@ -1,0 +1,22 @@
+# channel for rgw send notifications
+apiVersion: messaging.knative.dev/v1
+kind: InMemoryChannel
+metadata:
+   name: demo-channel
+---
+# subscription for the python-ceph-vectordb app which listens notifications from the channel
+apiVersion: messaging.knative.dev/v1
+kind: Subscription
+metadata:
+  name: my-subscription
+spec:
+  channel:
+    apiVersion: messaging.knative.dev/v1
+    kind: InMemoryChannel
+    name: demo-channel
+  subscriber:
+    ref:
+      apiVersion: serving.knative.dev/v1
+      kind: Service
+      name: python-ceph-vectordb
+---
