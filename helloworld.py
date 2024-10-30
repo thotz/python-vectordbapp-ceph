@@ -11,6 +11,13 @@ import re
 
 from dotenv import load_dotenv
 
+from PIL import Image
+# from io import BytesIO
+# import numpy as np
+
+from transformers import AutoFeatureExtractor, AutoModelForImageClassification
+
+
 client = MilvusClient(
     uri=os.getenv("MILVUS_ENDPOINT")
 )
@@ -49,21 +56,40 @@ def pythonvectordbappceph():
             dimension=os.getenv("VECTOR_DIMENSION"),
             )
 
+    # define different functions below code snippet
     match object_type:
         case "TEXT":
             object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
             object_content = object_data["Body"].read().decode("utf-8")
+            objectlist = []
+            objectlist.append(object_content)
+            embedding_fn = milvus_model.DefaultEmbeddingFunction()
+            vectors = embedding_fn.encode_documents(objectlist)
+
+        case "IMAGE":
+            bucket = s3.Bucket(bucket_name)
+            image_object = bucket.Object(object_key)
+            object_data = image_object.get()
+            object_stream = object_data['Body']
+            object_content = Image.open(object_stream)
+            extractor = AutoFeatureExtractor.from_pretrained("microsoft/resnet-50")
+            model = AutoModelForImageClassification.from_pretrained("microsoft/resnet-50")
+            inputs = extractor(images=object_content, return_tensors="pt")
+            outputs = model(**inputs)
+            vectors = outputs[1][-1].squeeze()
+
         case _:
             app.logger.error("Unknown object format")
     client.load_collection(collection_name=collection_name)
-    objectlist = []
 
-    objectlist.append(object_content)
+#  objectlist = []
 
-    # embedding_fn = milvus_model.DefaultEmbeddingFunction()
-    embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu')
+#   objectlist.append(object_content)
 
-    vectors = embedding_fn.encode_documents(objectlist)
+#    embedding_fn = milvus_model.DefaultEmbeddingFunction()
+    # embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu')
+
+#    vectors = embedding_fn.encode_documents(objectlist)
 
     app.logger.debug(vectors)
     global i
