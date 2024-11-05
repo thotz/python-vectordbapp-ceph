@@ -13,10 +13,45 @@ from dotenv import load_dotenv
 
 from PIL import Image
 # from io import BytesIO
-# import numpy as np
+import timm
+from sklearn.preprocessing import normalize
+from timm.data import resolve_data_config
+from timm.data.transforms_factory import create_transform
+import torch
 
 from transformers import AutoFeatureExtractor, AutoModelForImageClassification
 
+class FeatureExtractor:
+    def __init__(self, modelname):
+        # Load the pre-trained model
+        self.model = timm.create_model(
+            modelname, pretrained=True, num_classes=0, global_pool="avg"
+        )
+        self.model.eval()
+
+        # Get the input size required by the model
+        self.input_size = self.model.default_cfg["input_size"]
+
+        config = resolve_data_config({}, model=modelname)
+        # Get the preprocessing function provided by TIMM for the model
+        self.preprocess = create_transform(**config)
+
+    def __call__(self, imagepath):
+        # Preprocess the input image
+        input_image = Image.open(imagepath).convert("RGB")  # Convert to RGB if needed
+        input_image = self.preprocess(input_image)
+
+        # Convert the image to a PyTorch tensor and add a batch dimension
+        input_tensor = input_image.unsqueeze(0)
+
+        # Perform inference
+        with torch.no_grad():
+            output = self.model(input_tensor)
+
+        # Extract the feature vector
+        feature_vector = output.squeeze().numpy()
+
+        return normalize(feature_vector.reshape(1, -1), norm="l2").flatten()
 
 client = MilvusClient(
     uri=os.getenv("MILVUS_ENDPOINT")
@@ -54,48 +89,50 @@ def pythonvectordbappceph():
         client.create_collection(
             collection_name=collection_name,
             dimension=os.getenv("VECTOR_DIMENSION"),
+            enable_dynamic_field=True,
+            metric_type="COSINE",
             )
 
     # define different functions below code snippet
+    object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
     match object_type:
         case "TEXT":
-            object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
             object_content = object_data["Body"].read().decode("utf-8")
             objectlist = []
             objectlist.append(object_content)
-            embedding_fn = milvus_model.DefaultEmbeddingFunction()
+            # embedding_fn = milvus_model.DefaultEmbeddingFunction() #dimension 768
+            embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu') # dimension 384
             vectors = embedding_fn.encode_documents(objectlist)
 
-        case "IMAGE":
-            bucket = s3.Bucket(bucket_name)
-            image_object = bucket.Object(object_key)
-            object_data = image_object.get()
+        case "IMAGE1":
             object_stream = object_data['Body']
-            object_content = Image.open(object_stream)
+            # dimesnsion 512
+            extractor = FeatureExtractor("resnet34")
+            # issue : RPC error: [insert_rows], <DataNotMatchException: (code=1, message=The Input data type is inconsistent with defined schema, {vector} field should be a float_vector, but got a {<class 'numpy.float32'>} instead.)>
+            vectors = extractor(object_stream)
+
+        case "IMAGE2":
             extractor = AutoFeatureExtractor.from_pretrained("microsoft/resnet-50")
             model = AutoModelForImageClassification.from_pretrained("microsoft/resnet-50")
+            object_stream = object_data['Body']
+            object_content = Image.open(object_stream)
             inputs = extractor(images=object_content, return_tensors="pt")
+            # dimension 2048
             outputs = model(**inputs)
-            vectors = outputs[1][-1].squeeze()
+            # issue : RPC error: [insert_rows], <DataNotMatchException: (code=1, message=The Input data type is inconsistent with defined schema,{vector} field should be a float_vector, but got a {<class 'float'> python
+            vectors = outputs[0][0].squeeze().tolist()
 
         case _:
             app.logger.error("Unknown object format")
+
     client.load_collection(collection_name=collection_name)
-
-#  objectlist = []
-
-#   objectlist.append(object_content)
-
-#    embedding_fn = milvus_model.DefaultEmbeddingFunction()
-    # embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu')
-
-#    vectors = embedding_fn.encode_documents(objectlist)
 
     app.logger.debug(vectors)
     global i
     i = i + 1
     object_url = endpoint_url+ "/" + bucket_name + "/"+ object_key
-    data = [ {"id": i, "vector": vectors[0], "url": object_url} ]
+    data = [ {"id": i, "vector": vectors[0], "url": object_url}
+            ]
 
     res = client.insert(collection_name=collection_name, data=data)
     app.logger.debug(res)

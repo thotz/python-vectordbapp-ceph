@@ -2,4 +2,8 @@ Flask==2.3.2
 PyMilvus
 milvus_model
 boto3
-#sentence-transformers
+Pillow
+torch
+timm
+scikit-learn
+sentence-transformers

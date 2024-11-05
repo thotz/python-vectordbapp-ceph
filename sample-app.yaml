@@ -13,16 +13,16 @@ spec:
       labels: *labels
     spec:
       containers:
-        - name: python-ceph-vectordb
+        - name: python-ceph-vectordb-text
           # Source code: https://github.com/knative/eventing/tree/main/cmd/event_display
-          image: quay.io/jthottan/pythonwebserver:helloworld-python
+          image: quay.io/jthottan/pythonwebserver:python-vectordb-ceph
           envFrom:
           - configMapRef:
-              name: ceph-notification-bucket
+              name: ceph-notification-bucket-text
           - secretRef:
-              name: ceph-notification-bucket
+              name: ceph-notification-bucket-text
           - configMapRef:
-              name: python-ceph-vectordb
+              name: python-ceph-vectordb-text
 
 ---
 # Service that exposes python-vector-db-app app.
@@ -30,10 +30,10 @@ spec:
 kind: Service
 apiVersion: v1
 metadata:
-  name: python-ceph-vectordb
+  name: python-ceph-vectordb-text
 spec:
   selector:
-    app: python-ceph-vectordb
+    app: python-ceph-vectordb-text
   ports:
     - protocol: TCP
       port: 80
@@ -43,7 +43,7 @@ spec:
 kind: ConfigMap
 apiVersion: v1
 metadata:
-  name: python-ceph-vectordb
+  name: python-ceph-vectordb-text
 data:
   MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
   OBJECT_TYPE     : "TEXT"
