@@ -40,6 +40,7 @@ spec:
       targetPort: 8080
 ---
 #If it is a operator most lively this configmap will be part of CRD values
+#Currently per app for each bucket, ideally one app should support multiple buckets
 kind: ConfigMap
 apiVersion: v1
 metadata:
