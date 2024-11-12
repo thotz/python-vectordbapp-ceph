@@ -1,0 +1,50 @@
+# python vector db app deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-ceph-vectordb
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &labels
+      app: python-ceph-vectordb
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      containers:
+        - name: python-ceph-vectordb-text
+          image: quay.io/jthottan/pythonwebserver:python-vectordb-ceph
+          envFrom:
+          - configMapRef:
+              name: ceph-notification-bucket-text
+          - secretRef:
+              name: ceph-notification-bucket-text
+          - configMapRef:
+              name: python-ceph-vectordb-text
+
+---
+# Service that exposes python-vector-db-app app.
+# This will be the subscriber for the Trigger
+kind: Service
+apiVersion: v1
+metadata:
+  name: python-ceph-vectordb-text
+spec:
+  selector:
+    app: python-ceph-vectordb-text
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+#If it is a operator most lively this configmap will be part of CRD values
+#Currently per app for each bucket, ideally one app should support multiple buckets
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: python-ceph-vectordb-text
+data:
+  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
+  OBJECT_TYPE     : "TEXT"
+  VECTOR_DIMENSION: "384"

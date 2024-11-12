@@ -1,0 +1,81 @@
+# Assuming rook operator and ceph cluster is created
+#
+# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/crds.yaml
+#
+# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/common.yaml
+#
+# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/operator.yaml
+#
+# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/cluster-test.yaml
+#
+# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/object-test.yaml
+
+
+# optional: create user for milvus, if ceph used as s3 backend
+# apiVersion: ceph.rook.io/v1
+# kind: CephObjectStoreUser
+# metadata:
+#  name: milvus-user
+#  namespace: rook-ceph # namespace:cluster
+# spec:
+#  store: my-store
+#  displayName: "milvus user"
+---
+# topic for created for bucket notification
+apiVersion: ceph.rook.io/v1
+kind: CephBucketTopic
+metadata:
+  name: my-topic
+spec:
+  objectStoreName: my-store
+  objectStoreNamespace: rook-ceph
+  opaqueData: my@email.com
+  persistent: true
+  endpoint:
+    http:
+      uri: http://demo-channel-kn-channel.default.svc.cluster.local # default channel uri
+      disableVerifySSL: true
+      sendCloudEvents: true
+---
+# bucket notifications defined for event such as put and copy object
+apiVersion: ceph.rook.io/v1
+kind: CephBucketNotification
+metadata:
+  name: my-notification
+spec:
+  topic: my-topic
+  events:
+    - s3:ObjectCreated:Put
+    - s3:ObjectCreated:Copy
+---
+# storage class for OBCs
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: rook-ceph-delete-bucket
+provisioner: rook-ceph.ceph.rook.io/bucket # driver:namespace:cluster
+reclaimPolicy: Delete
+parameters:
+  objectStoreName: my-store
+  objectStoreNamespace: rook-ceph # namespace:cluster
+---
+
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: ceph-notification-bucket-text
+  labels:
+    bucket-notification-my-notification: my-notification # reference for notification
+spec:
+  generateBucketName: ceph-bkt
+  storageClassName: rook-ceph-delete-bucket
+---
+apiVersion: objectbucket.io/v1alpha1
+kind: ObjectBucketClaim
+metadata:
+  name: ceph-notification-bucket-image
+  labels:
+    bucket-notification-my-notification: my-notification # reference for notification
+spec:
+  generateBucketName: ceph-bkt
+  storageClassName: rook-ceph-delete-bucket
