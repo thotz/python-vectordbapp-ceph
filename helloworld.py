@@ -79,7 +79,7 @@ def pythonvectordbappceph():
 
     # collection name only supports '_', so change '-' in bucketname to '_'
     collection_name = re.sub('-', '_', bucket_name)
-    app.logger.debug(collection_name)
+    app.logger.debug("collection name from the bucket: " + collection_name)
     # parse object name from event
     # TODO: parse other metadatas and add to the collection
     event_data = json.loads(request.data)
@@ -98,6 +98,7 @@ def pythonvectordbappceph():
         index_params = client.prepare_index_params()
         index_params.add_index(field_name="embedded_vector", metric_type="L2", index_type="IVF_FLAT", params={"nlist": 16384})
         client.create_index(collection_name=collection_name, index_params=index_params)
+        app.logger.debug("collection " + collection_name + "created")
 
     # define different functions below code snippet
     object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
