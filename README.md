@@ -17,6 +17,11 @@ kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/d
 kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/object-test.yaml
 ```
 - Install [knative eventing](https://knative.dev/docs/install/yaml-install/eventing/install-eventing-with-yaml/#install-knative-eventing). Make sure to install the InMemory channel implementation.
+```sh
+kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/eventing-crds.yaml
+kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/eventing-core.yaml
+kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/in-memory-channel.yaml
+```
 - set up milvus cluster using [helm](https://milvus.io/docs/install_cluster-helm.md).
 
 # Setting up Bucket and collection for the `python vectordb app ceph`
@@ -235,5 +240,5 @@ There are sample programs attached in the repo which can be used to search and d
 - create milvus via helm
 
 ```sh
-# helm upgrade --install my-release --set cluster.enabled=true --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.mode=standalone milvus/milvus --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=<from Endpoint> --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
+# helm upgrade --install my-release --set cluster.enabled=true --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.mode=standalone milvus/milvus --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=$ENDPOINT --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
 ```

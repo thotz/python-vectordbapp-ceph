@@ -14,7 +14,7 @@
 apiVersion: ceph.rook.io/v1
 kind: CephBucketTopic
 metadata:
-  name: my-topic
+  name: kn-text-topic
 spec:
   objectStoreName: my-store
   objectStoreNamespace: rook-ceph
@@ -22,7 +22,23 @@ spec:
   persistent: true
   endpoint:
     http:
-      uri: http://demo-channel-kn-channel.default.svc.cluster.local # default channel uri
+      uri: http://text-channel-kn-channel.default.svc.cluster.local # default channel uri
+      disableVerifySSL: true
+      sendCloudEvents: true
+---
+# topic for created for bucket notification
+apiVersion: ceph.rook.io/v1
+kind: CephBucketTopic
+metadata:
+  name: kn-image-topic
+spec:
+  objectStoreName: my-store
+  objectStoreNamespace: rook-ceph
+  opaqueData: my@email.com
+  persistent: true
+  endpoint:
+    http:
+      uri: http://image-channel-kn-channel.default.svc.cluster.local # default channel uri
       disableVerifySSL: true
       sendCloudEvents: true
 ---
@@ -30,9 +46,19 @@ spec:
 apiVersion: ceph.rook.io/v1
 kind: CephBucketNotification
 metadata:
-  name: my-notification
+  name: text-notification
 spec:
-  topic: my-topic
+  topic: kn-text-topic
+  events:
+    - s3:ObjectCreated:Put
+    - s3:ObjectCreated:Copy
+---
+apiVersion: ceph.rook.io/v1
+kind: CephBucketNotification
+metadata:
+  name: image-notification
+spec:
+  topic: kn-image-topic
   events:
     - s3:ObjectCreated:Put
     - s3:ObjectCreated:Copy
@@ -54,7 +80,7 @@ kind: ObjectBucketClaim
 metadata:
   name: ceph-notification-bucket-text
   labels:
-    bucket-notification-my-notification: my-notification # reference for notification
+    bucket-notification-text-notification: text-notification # reference for notification
 spec:
   generateBucketName: ceph-bkt
   storageClassName: rook-ceph-delete-bucket
@@ -64,7 +90,7 @@ kind: ObjectBucketClaim
 metadata:
   name: ceph-notification-bucket-image
   labels:
-    bucket-notification-my-notification: my-notification # reference for notification
+    bucket-notification-image-notification: image-notification # reference for notification
 spec:
   generateBucketName: ceph-bkt
   storageClassName: rook-ceph-delete-bucket
