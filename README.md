@@ -4,9 +4,19 @@ This is application which runs creates a vectordb collection based on RGW bucket
 
 # Prerequisites
 
-- set up k8s cluster. For development purpose [minikube](https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download) can be used.
+- set up k8s cluster. For development purpose [minikube](https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download) can be used. Ceph needs an extra disk to work. So in case of minukube and kvm2 hyperviser, use:
+```sh
+minikube start --extra-disks=1
+```
 - set ceph cluster using [Rook](https://rook.io/docs/rook/latest-release/Storage-Configuration/Object-Storage-RGW/object-storage/).
-- Install [knative eventing](https://knative.dev/docs/install/yaml-install/eventing/install-eventing-with-yaml/#install-knative-eventing)
+```sh
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/crds.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/common.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/cluster-test.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/object-test.yaml
+```
+- Install [knative eventing](https://knative.dev/docs/install/yaml-install/eventing/install-eventing-with-yaml/#install-knative-eventing). Make sure to install the InMemory channel implementation.
 - set up milvus cluster using [helm](https://milvus.io/docs/install_cluster-helm.md).
 
 # Setting up Bucket and collection for the `python vectordb app ceph`
@@ -48,7 +58,7 @@ kubectl create -f knative-resources.yaml
 
 ### Create Bucket resources
 
-- create topic using the service endpoint of default channel, refer it uri field default value will be `http://demo-channel-kn-channel.default.svc.cluster.local`
+- create topic using the service endpoint of default knative channel, refer it in the uri field (default value will be `http://demo-channel-kn-channel.default.svc.cluster.local`)
 
 ```yaml
 apiVersion: ceph.rook.io/v1

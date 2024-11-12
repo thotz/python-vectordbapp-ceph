@@ -1,15 +1,4 @@
 # Assuming rook operator and ceph cluster is created
-#
-# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/crds.yaml
-#
-# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/common.yaml
-#
-# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/operator.yaml
-#
-# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/cluster-test.yaml
-#
-# kubectl apply -f https://github.com/rook/rook/blob/master/deploy/examples/object-test.yaml
-
 
 # optional: create user for milvus, if ceph used as s3 backend
 # apiVersion: ceph.rook.io/v1
