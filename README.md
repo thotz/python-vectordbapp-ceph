@@ -221,6 +221,47 @@ kubectl create -f sample-app.yaml
 
 ### Testing
 
+Make sure that there is access from the outside to the object store.
+Create an external sercvie:
+```sh
+cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: rook-ceph-rgw-my-store-external
+  namespace: rook-ceph
+  labels:
+    app: rook-ceph-rgw
+    rook_cluster: rook-ceph
+    rook_object_store: my-store
+spec:
+  ports:
+  - name: rgw
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: rook-ceph-rgw
+    rook_cluster: rook-ceph
+    rook_object_store: my-store
+  sessionAffinity: None
+  type: NodePort
+EOF
+```
+Get the URL from minikue:
+```sh
+export AWS_URL=$(minikube service --url rook-ceph-rgw-my-store-external -n rook-ceph)
+```
+
+To upload radosgw documentation to the text bucket, use:
+```sh
+export AWS_ACCESS_KEY_ID=$(kubectl get secret ceph-notification-bucket-text -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' |  base64 --decode)
+export AWS_SECRET_ACCESS_KEY=$(kubectl get secret ceph-notification-bucket-text -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' |  base64 --decode)
+export BUCKET_NAME=$(kubectl get obc ceph-notification-bucket-text -o jsonpath='{.spec.bucketName}')
+
+aws --endpoint-url "$AWS_URL" s3 sync <path to local docs> s3://"$BUCKET_NAME"
+```
+
 The `collection name` is based on the `bucket name`, will logged in the application pod. Currently is not exposed properly.
 There are sample programs attached in the repo which can be used to search and display the collection index etc.
 
