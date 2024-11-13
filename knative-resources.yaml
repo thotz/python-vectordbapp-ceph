@@ -1,25 +1,42 @@
-# kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/eventing-crds.yaml
-# kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/eventing-core.yaml
-# kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/in-memory-channel.yaml
 # channel for rgw send notifications
 apiVersion: messaging.knative.dev/v1
 kind: InMemoryChannel
 metadata:
-   name: demo-channel
+   name: text-channel
+---
+apiVersion: messaging.knative.dev/v1
+kind: InMemoryChannel
+metadata:
+   name: image-channel
 ---
 # subscription for the python-ceph-vectordb app which listens notifications from the channel
 apiVersion: messaging.knative.dev/v1
 kind: Subscription
 metadata:
-  name: my-subscription
+  name: text-subscription
 spec:
   channel:
     apiVersion: messaging.knative.dev/v1
     kind: InMemoryChannel
-    name: demo-channel
+    name: text-channel
   subscriber:
     ref:
       apiVersion: v1
       kind: Service
-      name: python-ceph-vectordb
+      name: python-ceph-vectordb-text
 ---
+# subscription for the python-ceph-vectordb app which listens notifications from the channel
+apiVersion: messaging.knative.dev/v1
+kind: Subscription
+metadata:
+  name: image-subscription
+spec:
+  channel:
+    apiVersion: messaging.knative.dev/v1
+    kind: InMemoryChannel
+    name: image-channel
+  subscriber:
+    ref:
+      apiVersion: v1
+      kind: Service
+      name: python-ceph-vectordb-image
