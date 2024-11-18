@@ -4,9 +4,24 @@ This is application which runs creates a vectordb collection based on RGW bucket
 
 # Prerequisites
 
-- set up k8s cluster. For development purpose [minikube](https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download) can be used.
+- set up k8s cluster. For development purpose [minikube](https://minikube.sigs.k8s.io/docs/start/?arch=%2Flinux%2Fx86-64%2Fstable%2Fbinary+download) can be used. Ceph needs an extra disk to work. So in case of minukube and kvm2 hyperviser, use:
+```sh
+minikube start --extra-disks=1
+```
 - set ceph cluster using [Rook](https://rook.io/docs/rook/latest-release/Storage-Configuration/Object-Storage-RGW/object-storage/).
-- Install [knative eventing](https://knative.dev/docs/install/yaml-install/eventing/install-eventing-with-yaml/#install-knative-eventing)
+```sh
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/crds.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/common.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/operator.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/cluster-test.yaml
+kubectl apply -f https://raw.githubusercontent.com/rook/rook/refs/heads/master/deploy/examples/object-test.yaml
+```
+- Install [knative eventing](https://knative.dev/docs/install/yaml-install/eventing/install-eventing-with-yaml/#install-knative-eventing). Make sure to install the InMemory channel implementation.
+```sh
+kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/eventing-crds.yaml
+kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/eventing-core.yaml
+kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/in-memory-channel.yaml
+```
 - set up milvus cluster using [helm](https://milvus.io/docs/install_cluster-helm.md).
 
 # Setting up Bucket and collection for the `python vectordb app ceph`
@@ -48,7 +63,7 @@ kubectl create -f knative-resources.yaml
 
 ### Create Bucket resources
 
-- create topic using the service endpoint of default channel, refer it uri field default value will be `http://demo-channel-kn-channel.default.svc.cluster.local`
+- create topic using the service endpoint of default knative channel, refer it in the uri field (default value will be `http://demo-channel-kn-channel.default.svc.cluster.local`)
 
 ```yaml
 apiVersion: ceph.rook.io/v1
@@ -206,6 +221,47 @@ kubectl create -f sample-app.yaml
 
 ### Testing
 
+Make sure that there is access from the outside to the object store.
+Create an external sercvie:
+```sh
+cat << EOF | kubectl apply -f -
+apiVersion: v1
+kind: Service
+metadata:
+  name: rook-ceph-rgw-my-store-external
+  namespace: rook-ceph
+  labels:
+    app: rook-ceph-rgw
+    rook_cluster: rook-ceph
+    rook_object_store: my-store
+spec:
+  ports:
+  - name: rgw
+    port: 80
+    protocol: TCP
+    targetPort: 8080
+  selector:
+    app: rook-ceph-rgw
+    rook_cluster: rook-ceph
+    rook_object_store: my-store
+  sessionAffinity: None
+  type: NodePort
+EOF
+```
+Get the URL from minikue:
+```sh
+export AWS_URL=$(minikube service --url rook-ceph-rgw-my-store-external -n rook-ceph)
+```
+
+To upload radosgw documentation to the text bucket, use:
+```sh
+export AWS_ACCESS_KEY_ID=$(kubectl get secret ceph-notification-bucket-text -o jsonpath='{.data.AWS_ACCESS_KEY_ID}' |  base64 --decode)
+export AWS_SECRET_ACCESS_KEY=$(kubectl get secret ceph-notification-bucket-text -o jsonpath='{.data.AWS_SECRET_ACCESS_KEY}' |  base64 --decode)
+export BUCKET_NAME=$(kubectl get obc ceph-notification-bucket-text -o jsonpath='{.spec.bucketName}')
+
+aws --endpoint-url "$AWS_URL" s3 sync <path to local docs> s3://"$BUCKET_NAME"
+```
+
 The `collection name` is based on the `bucket name`, will logged in the application pod. Currently is not exposed properly.
 There are sample programs attached in the repo which can be used to search and display the collection index etc.
 
@@ -225,5 +281,5 @@ There are sample programs attached in the repo which can be used to search and d
 - create milvus via helm
 
 ```sh
-# helm upgrade --install my-release --set cluster.enabled=true --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.mode=standalone milvus/milvus --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=<from Endpoint> --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
+# helm upgrade --install my-release --set cluster.enabled=true --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.mode=standalone milvus/milvus --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=$ENDPOINT --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
 ```
