@@ -1,0 +1,47 @@
+# python vector db app deployment for image
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: python-ceph-vectordb-image
+spec:
+  replicas: 1
+  selector:
+    matchLabels: &labels
+      app: python-ceph-vectordb-image
+  template:
+    metadata:
+      labels: *labels
+    spec:
+      containers:
+        - name: python-ceph-vectordb-image
+          image: quay.io/jthottan/pythonwebserver:python-vectordb-ceph
+          envFrom:
+          - configMapRef:
+              name: ceph-notification-bucket-image
+          - secretRef:
+              name: ceph-notification-bucket-image
+          - configMapRef:
+              name: python-ceph-vectordb-image
+---
+# Service that exposes python-vector-db-app app.
+# This will be the subscriber for the Trigger
+kind: Service
+apiVersion: v1
+metadata:
+  name: python-ceph-vectordb-image
+spec:
+  selector:
+    app: python-ceph-vectordb-image
+  ports:
+    - protocol: TCP
+      port: 80
+      targetPort: 8080
+---
+kind: ConfigMap
+apiVersion: v1
+metadata:
+  name: python-ceph-vectordb-image
+data:
+  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
+  OBJECT_TYPE     : "IMAGE"
+  VECTOR_DIMENSION: "512"

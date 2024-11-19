@@ -1,13 +1,13 @@
-# python vector db app deployment
+# python vector db app deployment for text
 apiVersion: apps/v1
 kind: Deployment
 metadata:
-  name: python-ceph-vectordb
+  name: python-ceph-vectordb-text
 spec:
   replicas: 1
   selector:
     matchLabels: &labels
-      app: python-ceph-vectordb
+      app: python-ceph-vectordb-text
   template:
     metadata:
       labels: *labels
@@ -22,16 +22,6 @@ spec:
               name: ceph-notification-bucket-text
           - configMapRef:
               name: python-ceph-vectordb-text
-        - name: python-ceph-vectordb-image
-          image: quay.io/jthottan/pythonwebserver:python-vectordb-ceph
-          envFrom:
-          - configMapRef:
-              name: ceph-notification-bucket-image
-          - secretRef:
-              name: ceph-notification-bucket-image
-          - configMapRef:
-              name: python-ceph-vectordb-image
-
 ---
 # Service that exposes python-vector-db-app app.
 # This will be the subscriber for the Trigger
@@ -47,20 +37,6 @@ spec:
       port: 80
       targetPort: 8080
 ---
-# Service that exposes python-vector-db-app app.
-# This will be the subscriber for the Trigger
-kind: Service
-apiVersion: v1
-metadata:
-  name: python-ceph-vectordb-image
-spec:
-  selector:
-    app: python-ceph-vectordb-image
-  ports:
-    - protocol: TCP
-      port: 80
-      targetPort: 8080
----
 #If it is a operator most likely this configmap will be part of CRD values
 #Currently per app for each bucket, ideally one app should support multiple buckets
 kind: ConfigMap
@@ -71,12 +47,3 @@ data:
   MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
   OBJECT_TYPE     : "TEXT"
   VECTOR_DIMENSION: "384"
----
-kind: ConfigMap
-apiVersion: v1
-metadata:
-  name: python-ceph-vectordb-image
-data:
-  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
-  OBJECT_TYPE     : "IMAGE"
-  VECTOR_DIMENSION: "512"
