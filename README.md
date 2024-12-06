@@ -508,6 +508,8 @@ docker run --rm <image id> <collection name> <path to file> --add-host=host.dock
 
 ### [Optional] Installing the milvus cluster using RGW as s3 backend
 
+- configure [virtual host style](https://rook.io/docs/rook/latest/Storage-Configuration/Object-Storage-RGW/object-storage/?h=virtual#virtual-host-style-bucket-access) access for rgw buckets.
+
 - create [CephObjectStoreUser](https://rook.io/docs/rook/latest-release/Storage-Configuration/Object-Storage-RGW/object-storage/#create-a-user) and create bucket using s3 client
 
 ```sh
@@ -519,5 +521,103 @@ docker run --rm <image id> <collection name> <path to file> --add-host=host.dock
 - create milvus via helm
 
 ```sh
-# helm upgrade --install my-release --set cluster.enabled=true --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.mode=standalone milvus/milvus --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=$ENDPOINT --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
+# helm upgrade --install my-release  milvus/milvus --set cluster.enabled=false --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=$ENDPOINT --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
 ```
+
+#### Configuring vhost style for RGW using ingress in minikube
+
+- enable minikube addons ingress, ingress-dns on live minikube cluster
+
+```sh
+minikube addons enable ingress
+minikube addons enable ingress-dns
+```
+
+- create external rgw service like mention in the beginning of `Testing` section.
+- create wildcard supported ingress endpoint pointing to `external rgw service` in rook namespace.
+
+```sh
+
+cat << EOF | kubectl apply -f -
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata:
+  name: ingress-wildcard-host
+  namespace: rook-ceph
+spec:
+  rules:
+  - host: "rgw.example.com"
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: rook-ceph-rgw-my-store-external
+            port:
+              number: 80
+  - host: "*.rgw.example.com"
+    http:
+      paths:
+      - pathType: Prefix
+        path: "/"
+        backend:
+          service:
+            name: rook-ceph-rgw-my-store-external
+            port:
+              number: 80
+EOF
+```
+
+- add following entry for the domain created by the ingress in the coredns configmap.
+
+```sh
+
+kubectl edit configmap coredns -n kube-system
+
+# add following entry
+
+rgw.example.com:53 {
+            errors
+            cache 30
+            forward . <ip of minikube>
+    }
+```
+
+The final configmap will look like following
+
+```yaml
+
+apiVersion: v1
+data:
+  Corefile: |
+    .:53 {
+        errors
+        health {
+           lameduck 5s
+        }
+...
+    }
+    rgw.example.com:53 {
+            errors
+            cache 30
+            forward . <ip of minikube>
+    }
+kind: ConfigMap
+metadata:
+```
+
+- add hosting block in the `cephobjectstore` crd and update it.
+
+```yaml
+
+spec:
+  ...
+  hosting:
+    advertiseEndpoint:
+      dnsName: rgw.example.com
+      port: 80
+      useTls: false
+```
+
+- restart the rook operator
