@@ -84,14 +84,14 @@ def pythonvectordbappceph():
     # TODO: parse other metadatas and add to the collection
     event_data = json.loads(request.data)
     object_key = event_data['Records'][0]['s3']['object']['key']
+    event_type = event_data['Records'][0]['eventName']
     app.logger.debug(object_key)
 
     # Create collection which includes the id, object url, and embedded vector
     if not client.has_collection(collection_name=collection_name):
         fields = [
-                FieldSchema(name='id', dtype=DataType.INT64, is_primary=True, auto_id=True),
-                FieldSchema(name='url', dtype=DataType.VARCHAR, max_length=2048),  # VARCHARS need a maximum length, so for this example they are set to 200 characters
-                FieldSchema(name='embedded_vector', dtype=DataType.FLOAT_VECTOR, dim=os.getenv("VECTOR_DIMENSION"))
+                FieldSchema(name='url', dtype=DataType.VARCHAR, max_length=2048, is_primary=True),  # VARCHARS need a maximum length, so for this example they are set to 200 characters
+                FieldSchema(name='embedded_vector', dtype=DataType.FLOAT_VECTOR, dim=int(os.getenv("VECTOR_DIMENSION")))
                 ]
         schema = CollectionSchema(fields=fields, enable_dynamic_field=True)
         client.create_collection(collection_name=collection_name, schema=schema)
@@ -100,7 +100,15 @@ def pythonvectordbappceph():
         client.create_index(collection_name=collection_name, index_params=index_params)
         app.logger.debug("collection " + collection_name + "created")
 
+    object_url = endpoint_url+ "/" + bucket_name + "/"+ object_key
+    client.load_collection(collection_name=collection_name)
     # define different functions below code snippet
+    if event_type == "ObjectRemoved:Delete":
+        exp = "url == \"" + object_url + "\""
+        app.logger.debug("starting deletion of "+object_url)
+        res = client.delete(collection_name=collection_name, filter=exp)
+        app.logger.debug(res)
+        return "delete success"  # delete success
     object_data = s3.get_object(Bucket=bucket_name, Key=object_key)
     match object_type:
         case "TEXT":
@@ -134,13 +142,10 @@ def pythonvectordbappceph():
         case _:
             app.logger.error("Unknown object format")
 
-    client.load_collection(collection_name=collection_name)
-
     app.logger.debug(vector)
-    object_url = endpoint_url+ "/" + bucket_name + "/"+ object_key
     data = [ {"embedded_vector": vector, "url": object_url} ]
 
-    res = client.insert(collection_name=collection_name, data=data)
+    res = client.upsert(collection_name=collection_name, data=data)
     app.logger.debug(res)
     return ''
 
