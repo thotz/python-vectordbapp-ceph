@@ -86,12 +86,14 @@ def pythonvectordbappceph():
     object_key = event_data['Records'][0]['s3']['object']['key']
     event_type = event_data['Records'][0]['eventName']
     app.logger.debug(object_key)
-
+    tags  = event_data['Records'][0]['s3']['object']['tags']
+    app.logger.debug("tags : " + str(tags))
     # Create collection which includes the id, object url, and embedded vector
     if not client.has_collection(collection_name=collection_name):
         fields = [
                 FieldSchema(name='url', dtype=DataType.VARCHAR, max_length=2048, is_primary=True),  # VARCHARS need a maximum length, so for this example they are set to 200 characters
-                FieldSchema(name='embedded_vector', dtype=DataType.FLOAT_VECTOR, dim=int(os.getenv("VECTOR_DIMENSION")))
+                FieldSchema(name='embedded_vector', dtype=DataType.FLOAT_VECTOR, dim=int(os.getenv("VECTOR_DIMENSION"))),
+                FieldSchema(name='tags', dtype=DataType.JSON, nullable=True)
                 ]
         schema = CollectionSchema(fields=fields, enable_dynamic_field=True)
         client.create_collection(collection_name=collection_name, schema=schema)
@@ -143,7 +145,11 @@ def pythonvectordbappceph():
             app.logger.error("Unknown object format")
 
     app.logger.debug(vector)
-    data = [ {"embedded_vector": vector, "url": object_url} ]
+
+    if len(tags) > 0:
+        data = [ {"embedded_vector": vector, "url": object_url, "tags": tags} ]
+    else:
+        data = [ {"embedded_vector": vector, "url": object_url} ]
 
     res = client.upsert(collection_name=collection_name, data=data)
     app.logger.debug(res)
