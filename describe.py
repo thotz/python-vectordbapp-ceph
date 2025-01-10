@@ -8,7 +8,6 @@ collection_name=str(sys.argv[1])
 index_name="embedded_vector"
 client.load_collection(collection_name)
 
-
 res = client.describe_collection(
         collection_name=collection_name
     )
@@ -33,5 +32,3 @@ results = client.query(
 print(" == query == ")
 print(results)
 print(" == End == ")
-
-
