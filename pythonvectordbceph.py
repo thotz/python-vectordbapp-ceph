@@ -15,6 +15,8 @@ from sklearn.preprocessing import normalize
 from timm.data import resolve_data_config
 from timm.data.transforms_factory import create_transform
 import torch
+import langchain
+from langchain_text_splitters import CharacterTextSplitter
 
 # this is need for only when second image embedding function is used
 # from transformers import AutoFeatureExtractor, AutoModelForImageClassification
@@ -71,6 +73,7 @@ bucket_name = os.getenv("BUCKET_NAME")
 
 object_type = os.getenv("OBJECT_TYPE")
 
+chunk_size = os.getenv("CHUNK_SIZE")
 
 app = Flask(__name__)
 
@@ -93,7 +96,9 @@ def pythonvectordbappceph():
         fields = [
                 FieldSchema(name='url', dtype=DataType.VARCHAR, max_length=2048, is_primary=True),  # VARCHARS need a maximum length, so for this example they are set to 200 characters
                 FieldSchema(name='embedded_vector', dtype=DataType.FLOAT_VECTOR, dim=int(os.getenv("VECTOR_DIMENSION"))),
-                FieldSchema(name='tags', dtype=DataType.JSON, nullable=True)
+                FieldSchema(name='tags', dtype=DataType.JSON, nullable=True),
+                FieldSchema(name='start_offset', dtype=DataType.INT64, nullable=True),
+                FieldSchema(name='end_offset', dtype=DataType.INT64, nullable=True)
                 ]
         schema = CollectionSchema(fields=fields, enable_dynamic_field=True)
         client.create_collection(collection_name=collection_name, schema=schema)
@@ -116,12 +121,28 @@ def pythonvectordbappceph():
         case "TEXT":
             object_content = object_data["Body"].read().decode("utf-8")
             objectlist = []
-            objectlist.append(object_content)
-            # default embedding function provided by milvus, it has some size limtation for the object
-            # embedding_fn = milvus_model.DefaultEmbeddingFunction() #dimension 768
-            embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu') # dimension 384
-            vectors = embedding_fn.encode_documents(objectlist)
-            vector = vectors[0]
+            if chunk_size > 1:
+                object_size = object_data["ContentLength"]
+                if object_size == 0 :
+                    app.logger.debug("object size zero cannot be chunked")
+                    return
+                text_splitter = CharacterTextSplitter(
+                    separator="\\n",
+                    chunk_size = chunk_size,
+                    chunk_overlap=0,
+                    length_function=len,
+                    is_separator_regex=False,
+                )
+                objectlist = text_splitter.split_text(object_content)
+                app.logger.debug("chunk size " + chunk_size + "no of chunks " + len(objectlist))
+            else :
+                objectlist.append(object_content)
+                # default embedding function provided by milvus, it has some size limtation for the object
+                # embedding_fn = milvus_model.DefaultEmbeddingFunction() #dimension 768
+                embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu') # dimension 384
+                vectors = embedding_fn.encode_documents(objectlist)
+                app.logger.debug("vector length "+len(vectors))
+                vector = vectors[0]
 
         case "IMAGE":
             object_stream = object_data['Body']
@@ -145,11 +166,25 @@ def pythonvectordbappceph():
             app.logger.error("Unknown object format")
 
     app.logger.debug(vector)
-
+    data = []
     if len(tags) > 0:
-        data = [ {"embedded_vector": vector, "url": object_url, "tags": tags} ]
+        if chunk_size > 1:
+            start_offset = 0
+            for i in len(objectlist):
+                end_offset = start_offset + len(objectlist[0])
+                data[i] = [ {"embedded_vector": vectors[i], "url": object_url, "start_offset": start_offset, "end_offset": end_offset, "tags": tags} ]
+                start_offset = end_offset +1
+        else:
+            data = [ {"embedded_vector": vector, "url": object_url, "tags": tags} ]
     else:
-        data = [ {"embedded_vector": vector, "url": object_url} ]
+        if chunk_size > 1:
+            start_offset = 0
+            for i in len(objectlist):
+                end_offset = start_offset + len(objectlist[0])
+                data[i] = [ {"embedded_vector": vectors[i], "url": object_url, "start_offset": start_offset, "end_offset": end_offset} ]
+                start_offset = end_offset + 1
+        else:
+            data = [ {"embedded_vector": vector, "url": object_url} ]
 
     res = client.upsert(collection_name=collection_name, data=data)
     app.logger.debug(res)

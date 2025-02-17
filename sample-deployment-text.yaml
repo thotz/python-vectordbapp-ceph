@@ -47,3 +47,4 @@ data:
   MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
   OBJECT_TYPE     : "TEXT"
   VECTOR_DIMENSION: "384"
+#  CHUNK_SIZE      : "500"
