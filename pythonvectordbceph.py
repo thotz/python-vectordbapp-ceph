@@ -75,6 +75,9 @@ object_type = os.getenv("OBJECT_TYPE")
 
 chunk_size = int(os.getenv("CHUNK_SIZE"))
 
+if chunk_size == None:
+    chunk_size = 1
+
 app = Flask(__name__)
 
 @app.route('/', methods=['POST'])
@@ -96,10 +99,11 @@ def pythonvectordbappceph():
     # Create collection which includes the id, object url, and embedded vector
     if not client.has_collection(collection_name=collection_name):
         fields = [
-                FieldSchema(name='url', dtype=DataType.VARCHAR, max_length=2048, is_primary=True),  # VARCHARS need a maximum length, so for this example they are set to 200 characters
+                FieldSchema(name="id", dtype=DataType.INT64, is_primary=True, auto_id=True),
+                FieldSchema(name='url', dtype=DataType.VARCHAR, max_length=2048),  # VARCHARS need a maximum length, so for this example they are set to 200 characters
                 FieldSchema(name='embedded_vector', dtype=DataType.FLOAT_VECTOR, dim=int(os.getenv("VECTOR_DIMENSION"))),
-                FieldSchema(name='start_offset', dtype=DataType.INT64, default_value=0),
-                FieldSchema(name='end_offset', dtype=DataType.INT64, default_value=0),
+                FieldSchema(name='start_offset', dtype=DataType.INT64, nullable=True),
+                FieldSchema(name='end_offset', dtype=DataType.INT64, nullable=True),
                 FieldSchema(name='tags', dtype=DataType.JSON, nullable=True)
                 ]
         #app.logger.debug(fields)
@@ -126,6 +130,9 @@ def pythonvectordbappceph():
         case "TEXT":
             object_content = object_data["Body"].read().decode("utf-8")
             objectlist = []
+            if chunk_size < 1:
+                app.logger.error("chunk size cannot be less than zero")
+                return
             if chunk_size > 1:
                 object_size = object_data["ContentLength"]
                 if object_size == 0 :
@@ -170,24 +177,28 @@ def pythonvectordbappceph():
         case _:
             app.logger.error("Unknown object format")
 
+    # delete entries already existing entries, otherwise duplicate entries is possible
+    res = client.delete(collection_name=collection_name,
+                        filter="url in "+ object_url)
+    #app.logger.debug(res)
+
     #app.logger.debug(vector)
     data = []
-
     # null value is not working as expected. The attribute is not set properly
     if chunk_size > 1:
         start_offset = 0
         for i in range(len(objectlist)):
             end_offset = start_offset + len(objectlist[i])
-            #if len(tags) > 0:
-            data.append({"embedded_vector": vectors[i], "url": object_url, "start_offset": start_offset, "end_offset": end_offset, "tags" : tags})
-            #else:
-            #    data.append({"embedded_vector": vectors[i], "url": object_url, "start_offset": start_offset, "end_offset": end_offset})
+            if len(tags) > 0:
+                data.append({"embedded_vector": vectors[i], "url": object_url, "start_offset": start_offset, "end_offset": end_offset, "tags" : tags})
+            else:
+                data.append({"embedded_vector": vectors[i], "url": object_url, "start_offset": start_offset, "end_offset": end_offset})
             start_offset = end_offset + 1
     else:
-        #if len(tags) > 0:
-        data.append({"embedded_vector": vector, "url": object_url, "tags": tags})
-        #else:
-        #data.append({"embedded_vector": vector, "url": object_url})
+        if len(tags) > 0:
+            data.append({"embedded_vector": vector, "url": object_url, "tags": tags})
+        else:
+            data.append({"embedded_vector": vector, "url": object_url})
 
     #app.logger.debug(data)
     res = client.insert(collection_name=collection_name, data=data)
