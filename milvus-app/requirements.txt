@@ -1,0 +1,9 @@
+Flask==2.3.2
+PyMilvus
+milvus_model
+boto3
+Pillow
+torch
+timm
+scikit-learn
+sentence-transformers
