@@ -1,14 +1,14 @@
 # Assuming rook operator and ceph cluster is created
 
-# optional: create user for milvus, if ceph used as s3 backend
-# apiVersion: ceph.rook.io/v1
-# kind: CephObjectStoreUser
-# metadata:
-#  name: milvus-user
-#  namespace: rook-ceph # namespace:cluster
-# spec:
-#  store: my-store
-#  displayName: "milvus user"
+# Create user for vector operations (required for S3 Vectors API)
+apiVersion: ceph.rook.io/v1
+kind: CephObjectStoreUser
+metadata:
+  name: vector-user
+  namespace: rook-ceph # namespace:cluster
+spec:
+  store: my-store
+  displayName: "vector operations user"
 ---
 # topic for created for bucket notification
 apiVersion: ceph.rook.io/v1
