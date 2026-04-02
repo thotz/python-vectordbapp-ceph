@@ -7,3 +7,4 @@ torch
 timm
 scikit-learn
 sentence-transformers
+langchain
