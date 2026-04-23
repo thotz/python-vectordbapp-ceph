@@ -1,6 +1,13 @@
 # python-vectordbapp-ceph
 
-This is application which runs creates a vectordb collection based on RGW bucket, containing object url and vector generated based on the object content. And all operations like searching and indexing can be performed directly on the collection without actual storing the data. The app inserts data based on the notification send from RGW. Here we are using milvus as vectordb app, can be extended to other vectordbs as well
+This application creates vector storage based on RGW buckets using the S3 Vectors API (boto3 s3vectors client). It stores object URLs and vectors generated from object content. The app processes data based on notifications sent from RGW and uses RGW's native S3 vector support for storage, indexing, and searching.
+
+## Key Features
+- Uses boto3 `s3vectors` client for vector operations
+- Vector bucket naming: `<bucket-name>-vectors` (preserves hyphens)
+- Automatic vector bucket creation and index configuration
+- Supports TEXT (dimension 384) and IMAGE (dimension 512) embeddings
+- Uses S3 Vectors API: `create_bucket`, `create_index`, `put_vectors`, `search_vectors`, `delete_vectors`
 
 # Prerequisites
 
@@ -28,11 +35,9 @@ kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v
 kubectl apply -f https://github.com/knative/eventing/releases/download/knative-v1.16.0/in-memory-channel.yaml
 ```
 
-- set up milvus cluster using [helm](https://milvus.io/docs/install_cluster-helm.md).
+# Setting up Bucket and vector storage for the `python vectordb app ceph`
 
-# Setting up Bucket and collection for the `python vectordb app ceph`
-
-Assuming the milvus, channel, obc is created in `default` namespace and rook resources in `rook-ceph` namespace. The app will be created in default namespace.
+Assuming the channel and obc are created in `default` namespace and rook resources in `rook-ceph` namespace. The app will be created in default namespace. The application now uses RGW's native S3 vector support instead of Milvus.
 
 ### Setting up channel and subscription
 
@@ -203,13 +208,12 @@ kubectl create -f rook-resources.yaml
 
 The application can handle only bucket atm. For multiple buckets current requires different application with different configuration
 
-A configmap is need for the application which refers following :
+A configmap is needed for the application which refers to the following:
 
-- `MILVUS_ENDPOINT` : The service endpoint or uri where milvus is running.
-- `OBJECT_TYPE` : The type of object which bucket holds, current support `TEXT` and `IMAGE`.
-- `VECTOR_DIMENSION` : The dimension of vector created by the embedded function. In the current have two different embedding function:
-  - `TEXT` it uses `SentenceTransformerEmbeddingFunction` which creates vector of dimension `384`.
-  - `IMAGE` it uses `resnet34` which creates vector of dimension `512`.
+- `OBJECT_TYPE` : The type of object which bucket holds, currently supports `TEXT` and `IMAGE`.
+- `VECTOR_DIMENSION` : The dimension of vector created by the embedding function. Currently supports two different embedding functions:
+  - `TEXT` uses `SentenceTransformer` (all-MiniLM-L6-v2) which creates vectors of dimension `384`.
+  - `IMAGE` uses `resnet34` which creates vectors of dimension `512`.
 
 ```yaml
 
@@ -218,7 +222,6 @@ apiVersion: v1
 metadata:
   name: python-ceph-vectordb-text
 data:
-  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
   OBJECT_TYPE     : "TEXT"
   VECTOR_DIMENSION: "384"
 
@@ -229,7 +232,6 @@ apiVersion: v1
 metadata:
   name: python-ceph-vectordb-image
 data:
-  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
   OBJECT_TYPE     : "IMAGE"
   VECTOR_DIMENSION: "512"
 
@@ -376,248 +378,46 @@ export BUCKET_NAME=$(kubectl get obc ceph-notification-bucket-text -o jsonpath='
 aws --endpoint-url "$AWS_URL" s3 sync <path to local docs> s3://"$BUCKET_NAME"
 ```
 
-Expose the milvus service via executing following command from different terminal make sure 27017 port is available:
+The vector bucket name is automatically derived from the bucket name (appending '-vectors'). You can check the logs to see the vector bucket being created:
 
 ```sh
-kubectl port-forward --address 0.0.0.0 service/my-release-milvus 27017:19530
+kubectl logs <pod name for python application> | grep "vector bucket"
 ```
 
-This port forward milvus port locally to the host
+### Searching Vectors
 
-Now milvus uri can accessed via http://localhost:27017
+**Important:** Vector search operations require credentials from the CephObjectStoreUser (vector-user), not the OBC credentials.
 
-The collection name can be found by grepping "collection name from the bucket:" in kubectl logs.
+To search for text objects, use the following command:
 
 ```sh
-kubectl logs <pod name for python application> | grep "collection name from the bucket"
+python search.py <endpoint_url> <vector_access_key> <vector_secret_key> <bucket_name> <search_text>
 ```
 
-following is the python program to search text and requires input as "milvus uri" "collection name" "text to search"
+Example:
+```sh
+export AWS_URL=$(minikube service --url rook-ceph-rgw-my-store-external -n rook-ceph)
+export VECTOR_ACCESS_KEY=$(kubectl get secret rook-ceph-object-user-my-store-vector-user -n rook-ceph -o jsonpath='{.data.AccessKey}' | base64 --decode)
+export VECTOR_SECRET_KEY=$(kubectl get secret rook-ceph-object-user-my-store-vector-user -n rook-ceph -o jsonpath='{.data.SecretKey}' | base64 --decode)
+export BUCKET_NAME=$(kubectl get obc ceph-notification-bucket-text -o jsonpath='{.spec.bucketName}')
 
-```py
-
-import milvus_model
-import sys, getopt
-from pymilvus import MilvusClient, DataType, Collection
-
-CLUSTER_ENDPOINT=str(sys.argv[1])
-client = MilvusClient(uri=CLUSTER_ENDPOINT)
-collection_name=str(sys.argv[2])
-client.load_collection(collection_name)
-
-embedding_fn = milvus_model.dense.SentenceTransformerEmbeddingFunction(model_name='all-MiniLM-L6-v2',device='cpu')
-query_vectors = embedding_fn.encode_queries([str(sys.argv[3])])
-
-res = client.search(
-    collection_name=collection_name,  # target collection
-    data=query_vectors,  # query vectors
-    limit=2,  # number of returned entities
-    output_fields=["url"],  # specifies fields to be returned
-    consistency_level="Strong" ## NOTE: without defining that, the search might return empty result.
-)
-print(res)
+python search.py "$AWS_URL" "$VECTOR_ACCESS_KEY" "$VECTOR_SECRET_KEY" "$BUCKET_NAME" "your search text"
 ```
+
+For image searching:
 
 ```sh
-python search.py  http://localhost:27017 <collection name> <search text>
+python search_image.py <endpoint_url> <vector_access_key> <vector_secret_key> <bucket_name> <path_to_image>
 ```
 
-Similarly for image searching can be done with help following python script:
-
-```py
-import sys, getopt
-from pymilvus import MilvusClient, DataType, Collection
-import torch
-from PIL import Image
-import timm
-from sklearn.preprocessing import normalize
-from timm.data import resolve_data_config
-from timm.data.transforms_factory import create_transform
-
-
-class FeatureExtractor:
-    def __init__(self, modelname):
-        # Load the pre-trained model
-        self.model = timm.create_model(
-            modelname, pretrained=True, num_classes=0, global_pool="avg"
-        )
-        self.model.eval()
-
-        # Get the input size required by the model
-        self.input_size = self.model.default_cfg["input_size"]
-
-        config = resolve_data_config({}, model=modelname)
-        # Get the preprocessing function provided by TIMM for the model
-        self.preprocess = create_transform(**config)
-
-    def __call__(self, imagepath):
-        # Preprocess the input image
-        input_image = Image.open(imagepath).convert("RGB")  # Convert to RGB if needed
-        input_image = self.preprocess(input_image)
-
-        # Convert the image to a PyTorch tensor and add a batch dimension
-        input_tensor = input_image.unsqueeze(0)
-
-        # Perform inference
-        with torch.no_grad():
-            output = self.model(input_tensor)
-
-        # Extract the feature vector
-        feature_vector = output.squeeze().numpy()
-
-        return normalize(feature_vector.reshape(1, -1), norm="l2").flatten()
-
-CLUSTER_ENDPOINT = str(sys.argv[1])
-client = MilvusClient(uri=CLUSTER_ENDPOINT)
-collection_name = str(sys.argv[2])
-query_image =  str(sys.argv[3])
-client.load_collection(collection_name)
-extractor = FeatureExtractor("resnet34")
-res = client.search(
-    collection_name=collection_name,  # target collection
-    data=[extractor(query_image)],  # query vectors
-    limit=2,  # number of returned entities
-    output_fields=["url"],  # specifies fields to be returned
-    consistency_level="Strong" ## NOTE: without defining that, the search might return empty result.
-)
-print(res)
-```
-
+Example:
 ```sh
-python search.py  http://localhost:27017 <collection name> <path to image>
+export AWS_URL=$(minikube service --url rook-ceph-rgw-my-store-external -n rook-ceph)
+export VECTOR_ACCESS_KEY=$(kubectl get secret rook-ceph-object-user-my-store-vector-user -n rook-ceph -o jsonpath='{.data.AccessKey}' | base64 --decode)
+export VECTOR_SECRET_KEY=$(kubectl get secret rook-ceph-object-user-my-store-vector-user -n rook-ceph -o jsonpath='{.data.SecretKey}' | base64 --decode)
+export BUCKET_NAME=$(kubectl get obc ceph-notification-bucket-image -o jsonpath='{.spec.bucketName}')
+
+python search_image.py "$AWS_URL" "$VECTOR_ACCESS_KEY" "$VECTOR_SECRET_KEY" "$BUCKET_NAME" "/path/to/query/image.jpg"
 ```
 
-This requires python 3.12 atleast, if you don't have it please use below container images:
-
-```sh
-# for text
-docker pull quay.io/jthottan/pythonwebserver:python-vectordb-search-text
-
-docker run --rm <image id> search.py  http://localhost:27017 <collection name> <search text> --add-host=host.docker.internal:host-gateway
-
-```
-
-```sh
-# for image
-
-docker pull quay.io/jthottan/pythonwebserver:python-vectordb-search-image
-
-docker run --rm <image id> <collection name> <path to file> --add-host=host.docker.internal:host-gateway -v <path to directory for the input file>:/mnt/<directory name>
-
-```
-
-### [Optional] Installing the milvus cluster using RGW as s3 backend
-
-- configure [virtual host style](https://rook.io/docs/rook/latest/Storage-Configuration/Object-Storage-RGW/object-storage/?h=virtual#virtual-host-style-bucket-access) access for rgw buckets.
-
-- create [CephObjectStoreUser](https://rook.io/docs/rook/latest-release/Storage-Configuration/Object-Storage-RGW/object-storage/#create-a-user) and create bucket using s3 client
-
-```sh
-# export AWS_ACCESS_KEY=$(kubectl -n rook-ceph get secret rook-ceph-object-user-my-store-milvus-user -o jsonpath='{.data.AccessKey}' | base64 --decode)
-# export AWS_SECRET_KEY=$(kubectl -n rook-ceph get secret rook-ceph-object-user-my-store-milvus-user -o jsonpath='{.data.SecretKey}' | base64 --decode)
-# export Endpoint=$(kubectl -n rook-ceph get secret rook-ceph-object-user-my-store-milvus-user -o jsonpath='{.data.Endpoint}' | base64 --decode)
-```
-
-- create milvus via helm
-
-```sh
-# helm upgrade --install my-release  milvus/milvus --set cluster.enabled=false --set etcd.replicaCount=1 --set pulsar.enabled=false --set minio.enabled=false --set externalS3.enabled=true --set externalS3.host=$ENDPOINT --set externalS3.port=<from endpoint> --set externalS3.accessKey=$AWS_ACCESS_KEY --set externalS3.secretKey=$AWS_SECRET_KEY --set externalS3.bucketName=<bucket created by the user>
-```
-
-#### Configuring vhost style for RGW using ingress in minikube
-
-- enable minikube addons ingress, ingress-dns on live minikube cluster
-
-```sh
-minikube addons enable ingress
-minikube addons enable ingress-dns
-```
-
-- create external rgw service like mention in the beginning of `Testing` section.
-- create wildcard supported ingress endpoint pointing to `external rgw service` in rook namespace.
-
-```sh
-
-cat << EOF | kubectl apply -f -
-apiVersion: networking.k8s.io/v1
-kind: Ingress
-metadata:
-  name: ingress-wildcard-host
-  namespace: rook-ceph
-spec:
-  rules:
-  - host: "rgw.example.com"
-    http:
-      paths:
-      - pathType: Prefix
-        path: "/"
-        backend:
-          service:
-            name: rook-ceph-rgw-my-store-external
-            port:
-              number: 80
-  - host: "*.rgw.example.com"
-    http:
-      paths:
-      - pathType: Prefix
-        path: "/"
-        backend:
-          service:
-            name: rook-ceph-rgw-my-store-external
-            port:
-              number: 80
-EOF
-```
-
-- add following entry for the domain created by the ingress in the coredns configmap.
-
-```sh
-
-kubectl edit configmap coredns -n kube-system
-
-# add following entry
-
-rgw.example.com:53 {
-            errors
-            cache 30
-            forward . <ip of minikube>
-    }
-```
-
-The final configmap will look like following
-
-```yaml
-
-apiVersion: v1
-data:
-  Corefile: |
-    .:53 {
-        errors
-        health {
-           lameduck 5s
-        }
-...
-    }
-    rgw.example.com:53 {
-            errors
-            cache 30
-            forward . <ip of minikube>
-    }
-kind: ConfigMap
-metadata:
-```
-
-- add hosting block in the `cephobjectstore` crd and update it.
-
-```yaml
-
-spec:
-  ...
-  hosting:
-    advertiseEndpoint:
-      dnsName: rgw.example.com
-      port: 80
-      useTls: false
-```
-
-- restart the rook operator
+The search scripts will return the top 2 most similar objects based on L2 distance.

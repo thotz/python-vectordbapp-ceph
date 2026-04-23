@@ -22,6 +22,22 @@ spec:
               name: ceph-notification-bucket-text
           - configMapRef:
               name: python-ceph-vectordb-text
+          env:
+          - name: VECTOR_ACCESS_KEY
+            valueFrom:
+              secretKeyRef:
+                name: rook-ceph-object-user-my-store-vector-user
+                key: AccessKey
+          - name: VECTOR_SECRET_KEY
+            valueFrom:
+              secretKeyRef:
+                name: rook-ceph-object-user-my-store-vector-user
+                key: SecretKey
+          - name: VECTOR_ENDPOINT
+            valueFrom:
+              secretKeyRef:
+                name: rook-ceph-object-user-my-store-vector-user
+                key: Endpoint
 ---
 # Service that exposes python-vector-db-app app.
 # This will be the subscriber for the Trigger
@@ -44,6 +60,5 @@ apiVersion: v1
 metadata:
   name: python-ceph-vectordb-text
 data:
-  MILVUS_ENDPOINT : "http://my-release-milvus.default.svc:19530"
   OBJECT_TYPE     : "TEXT"
   VECTOR_DIMENSION: "384"
